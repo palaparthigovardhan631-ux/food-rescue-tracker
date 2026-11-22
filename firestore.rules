@@ -1,0 +1,139 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isProvider() {
+      return isAuthenticated() && getUserData().role == 'provider';
+    }
+
+    function isReceiver() {
+      return isAuthenticated() && getUserData().role == 'receiver';
+    }
+
+    // 1. Users Collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      // Allow user to write their own profile
+      allow create: if isOwner(userId) && 
+        request.resource.data.role in ['provider', 'receiver'] &&
+        request.resource.data.keys().hasAll(['uid', 'role', 'name', 'createdAt']);
+      
+      // User can update basic info, but role cannot be mutated directly after onboarding
+      allow update: if isOwner(userId) && 
+        request.resource.data.role == resource.data.role;
+
+      allow delete: if false; // Deletion handled by admin/backend function
+    }
+
+    // 2. Food Listings Collection
+    match /food_listings/{listingId} {
+      // Receivers and providers can view listings that are not deleted
+      allow read: if isAuthenticated();
+
+      // Only registered providers can post surplus food
+      allow create: if isProvider() && 
+        request.resource.data.providerId == request.auth.uid &&
+        request.resource.data.hygieneDeclaration == true &&
+        request.resource.data.bestBefore > request.time &&
+        request.resource.data.status == 'available' &&
+        request.resource.data.remainingQuantity.value > 0;
+
+      // Updating listing:
+      // 1. Provider can edit their active listing
+      // 2. Or an atomic claim transaction can decrement remainingQuantity and update status
+      allow update: if isAuthenticated() && (
+        // Case A: Owner updates details
+        (resource.data.providerId == request.auth.uid) ||
+        
+        // Case B: Atomic claim transaction lock by receiver
+        (
+          isReceiver() &&
+          // Cannot modify other fields
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'remainingQuantity', 'updatedAt']) &&
+          // Cannot claim already expired food
+          resource.data.bestBefore > request.time &&
+          // Remaining quantity must be non-negative
+          request.resource.data.remainingQuantity.value >= 0 &&
+          request.resource.data.remainingQuantity.value < resource.data.remainingQuantity.value &&
+          // If 0 left, status becomes reserved
+          (request.resource.data.remainingQuantity.value == 0 ? request.resource.data.status == 'reserved' : request.resource.data.status == 'available')
+        ) ||
+
+        // Case C: Cloud Function / Provider closing or expiring
+        (resource.data.providerId == request.auth.uid && request.resource.data.status in ['picked_up', 'expired', 'cancelled'])
+      );
+
+      // Only provider owner can delete their post
+      allow delete: if isAuthenticated() && resource.data.providerId == request.auth.uid;
+    }
+
+    // 3. Claims Collection
+    match /claims/{claimId} {
+      // Parties involved (recipient or provider) can read the claim
+      allow read: if isAuthenticated() && (
+        resource.data.recipientId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid
+      );
+
+      // Recipient creates claim during atomic transaction
+      allow create: if isReceiver() &&
+        request.resource.data.recipientId == request.auth.uid &&
+        request.resource.data.status == 'locked' &&
+        // Lock period must be strictly within 30 minutes from now
+        request.resource.data.lockedUntil <= request.time + duration.value(30, 'm') &&
+        request.resource.data.claimedQuantity.value > 0;
+
+      // Status transitions for claims
+      allow update: if isAuthenticated() && (
+        // Handover confirmation: provider verifies OTP and marks picked_up
+        (
+          resource.data.providerId == request.auth.uid &&
+          request.resource.data.status == 'picked_up' &&
+          resource.data.status in ['locked', 'confirmed']
+        ) ||
+        // Recipient can cancel lock before expiry
+        (
+          resource.data.recipientId == request.auth.uid &&
+          request.resource.data.status == 'cancelled' &&
+          resource.data.status == 'locked'
+        )
+      );
+
+      allow delete: if false;
+    }
+
+    // 4. Notifications Collection
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Notifications are written via Cloud Functions or server-side events
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && 
+        resource.data.userId == request.auth.uid && 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // 5. Reviews Collection (Hygiene & Trust System)
+    match /reviews/{reviewId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+        request.resource.data.reviewerId == request.auth.uid &&
+        request.resource.data.rating >= 1 && 
+        request.resource.data.rating <= 5;
+      allow update, delete: if false;
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "food-rescue-tracker-preview",
+  "version": "1.0.0",
+  "description": "Smart Leftover & Food Rescue Tracker - Interactive Web Application",
+  "scripts": {
+    "start": "serve ."
+  },
+  "keywords": [
+    "food-rescue",
+    "sustainability",
+    "leftover-tracker"
+  ],
+  "author": "Govardhan Palaparthi",
+  "license": "MIT"
+}

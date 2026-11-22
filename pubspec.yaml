@@ -1,0 +1,49 @@
+name: food_rescue_tracker
+description: "Smart Leftover & Food Rescue Tracker - Connecting surplus food providers with verified recipients."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management & Reactive streams
+  flutter_riverpod: ^2.5.1
+  
+  # Firebase Ecosystem
+  firebase_core: ^3.1.0
+  firebase_auth: ^5.1.0
+  cloud_firestore: ^5.0.1
+  firebase_messaging: ^15.0.1
+  
+  # Maps, Routing & Geo-spatial
+  google_maps_flutter: ^2.6.0
+  geolocator: ^12.0.0
+  google_maps_cluster_manager: ^3.0.0
+  
+  # HTTP & Cloudinary
+  http: ^1.2.1
+  image_picker: ^1.1.1
+  
+  # QR & Barcode (Handover verification)
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^5.1.1
+  
+  # UI & Utilities
+  intl: ^0.19.0
+  uuid: ^4.4.0
+  flutter_local_notifications: ^17.1.1
+  url_launcher: ^6.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icons/
